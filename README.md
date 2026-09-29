@@ -46,3 +46,11 @@ techfix_api/
 ├── package.json          # Metadados e dependências do projeto
 ├── README.md             # Documentação técnica do sistema
 └── server.js             # Ponto de entrada e sincronização da aplicação
+
+---
+
+## 👥 Integrantes do Grupo:
+
+- Thales Vasconcellos Tardelli Sabbag de Paula
+- Matheus Barrense Mendes dos Santos
+- Gabriel Henrique Sartório
