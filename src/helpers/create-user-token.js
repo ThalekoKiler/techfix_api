@@ -5,8 +5,8 @@ const createUserToken = async (user, req, res) => {
     // Criar token JWT
     const token = jwt.sign(
         {
-            id: user.id,
-            name: user.name
+            name: user.name,
+            id: user.id
         },
         process.env.JWT_SECRET,
         {
@@ -18,7 +18,8 @@ const createUserToken = async (user, req, res) => {
     return res.status(200).json({
         message: 'Autenticação realizada com sucesso!',
         token: token,
-        userId: user.id
+        userId: user.id,
+        name: user.name
     });
 };
 

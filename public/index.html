@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GameWish - Dashboard</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -15,7 +17,7 @@
             <p>Gerenciador de Jogos & Lista de Desejos</p>
         </header>
 
-        <!-- Painel de Estatísticas -->
+        <!-- Painel de Estatísticas Pessoais -->
         <section class="card full-width hidden" id="stats-panel">
             <h2>📊 Suas Estatísticas</h2>
             <div class="stats-grid">
@@ -68,7 +70,7 @@
 
                 <div id="user-info" class="hidden">
                     <p>Conectado como: <strong id="logged-user-name"></strong></p>
-                    <button id="btn-logout" class="btn-danger">Sair</button>
+                    <button id="btn-logout" class="btn-danger" onclick="logoutUser()">Sair</button>
                 </div>
             </section>
 
@@ -100,13 +102,6 @@
         <section class="card full-width filter-card">
             <div class="filter-grid">
                 <input type="text" id="filter-search" placeholder="Buscar por título...">
-                <select id="filter-status">
-                    <option value="">Todos os status</option>
-                    <option value="desejado">Desejado</option>
-                    <option value="jogando">Jogando</option>
-                    <option value="concluido">Concluído</option>
-                    <option value="abandonado">Abandonado</option>
-                </select>
                 <input type="text" id="filter-platform" placeholder="Filtrar por plataforma (ex: PC)...">
                 <button id="btn-filter" class="btn-secondary">Filtrar</button>
                 <button id="btn-clear-filter" class="btn-danger">Limpar</button>
@@ -116,13 +111,14 @@
         <!-- Catálogo de Jogos -->
         <section class="card full-width">
             <div class="list-header">
-                <h2>Catálogo de Jogos</h2>
-                <div style="display: flex; gap: 8px;">
+                <h2 id="catalog-title">Catálogo Comunitário</h2>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button id="btn-toggle-view" class="btn-secondary">📁 Ver Meus Jogos</button>
                     <a href="/games/export/excel" class="btn-secondary"
                         style="text-decoration: none; display: inline-flex; align-items: center; padding: 10px; border-radius: 6px; font-weight: 600; font-size: 0.9rem;">
                         📊 Baixar Excel
                     </a>
-                    <button id="btn-reload" class="btn-secondary">Atualizar Lista</button>
+                    <button id="btn-reload" class="btn-secondary">Atualizar</button>
                 </div>
             </div>
             <div id="games-container" class="games-grid">

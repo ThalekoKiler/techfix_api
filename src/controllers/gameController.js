@@ -1,5 +1,5 @@
-const { Op, HasMany } = require('sequelize');
-const { Game, User } = require('../models');
+const { Op } = require('sequelize');
+const { Game, User, sequelize } = require('../models');
 const ExcelJS = require('exceljs');
 
 class GameController {
@@ -36,33 +36,43 @@ class GameController {
 
     // GET /games (Com suporte a filtros e busca avançada)
     static async getAll(req, res) {
-        const { search, status, platform } = req.query;
+        const { search, platform, genre } = req.query;
         const where = {};
 
         if (search) {
             where.title = { [Op.like]: `%${search}%` };
         }
-        if (status) {
-            where.status = status;
-        }
         if (platform) {
             where.platform = { [Op.like]: `%${platform}%` };
+        }
+        if (genre) {
+            where.genre = { [Op.like]: `%${genre}%` };
         }
 
         try {
             const games = await Game.findAll({
                 where,
-                include: {
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'name', 'email']
-                },
-                order: [['createdAt', 'DESC']]
+                attributes: [
+                    // Normaliza o título eliminando espaços nas pontas para agrupar sem falhas
+                    [sequelize.fn('TRIM', sequelize.col('title')), 'title'],
+                    [sequelize.fn('MAX', sequelize.col('genre')), 'genre'],
+                    [sequelize.fn('MAX', sequelize.col('platform')), 'platform'],
+                    [sequelize.fn('MAX', sequelize.col('image')), 'image'],
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'totalUsers'],
+                    [
+                        sequelize.fn('ROUND', sequelize.fn('AVG', sequelize.col('rating')), 1),
+                        'averageRating'
+                    ]
+                ],
+                // Agrupa estritamente pelo título limpo
+                group: [sequelize.fn('TRIM', sequelize.col('title'))],
+                order: [[sequelize.fn('AVG', sequelize.col('rating')), 'DESC']]
             });
 
             return res.status(200).json(games);
         } catch (error) {
-            return res.status(500).json({ error: 'Erro ao listar jogos.', details: error.message });
+            console.error('ERRO AO BUSCAR JOGOS UNIFICADOS:', error);
+            return res.status(500).json({ error: 'Erro ao listar catálogo unificado.', details: error.message });
         }
     }
 
@@ -107,34 +117,36 @@ class GameController {
     static async exportToExcel(req, res) {
         try {
             const games = await Game.findAll({
-                include: {
-                    model: User,
-                    as: 'user',
-                    attributes: ['name', 'email']
-                },
-                order: [['createdAt', 'DESC']]
+                attributes: [
+                    [sequelize.fn('TRIM', sequelize.col('title')), 'title'],
+                    [sequelize.fn('MAX', sequelize.col('genre')), 'genre'],
+                    [sequelize.fn('MAX', sequelize.col('platform')), 'platform'],
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'totalUsers'],
+                    [
+                        sequelize.fn('ROUND', sequelize.fn('AVG', sequelize.col('rating')), 1),
+                        'averageRating'
+                    ]
+                ],
+                group: [sequelize.fn('TRIM', sequelize.col('title'))],
+                order: [[sequelize.fn('AVG', sequelize.col('rating')), 'DESC']]
             });
 
             const workbook = new ExcelJS.Workbook();
             workbook.creator = 'GameWish API';
             workbook.created = new Date();
 
-            const worksheet = workbook.addWorksheet('Catálogo de Jogos');
+            const worksheet = workbook.addWorksheet('Catálogo Comunitário');
 
-            // Define colunas com largura e alinhamentos diretos
+            // Configuração das colunas
             worksheet.columns = [
-                { header: 'ID', key: 'id', width: 8, style: { alignment: { horizontal: 'center' } } },
-                { header: 'Título do Jogo', key: 'title', width: 30 },
-                { header: 'Gênero', key: 'genre', width: 20 },
-                { header: 'Plataforma', key: 'platform', width: 20 },
-                { header: 'Status', key: 'status', width: 16, style: { alignment: { horizontal: 'center' } } },
-                { header: 'Nota', key: 'rating', width: 12, style: { alignment: { horizontal: 'center' } } },
-                { header: 'Cadastrado Por', key: 'userName', width: 25 },
-                { header: 'Email Usuário', key: 'userEmail', width: 30 },
-                { header: 'Data de Cadastro', key: 'createdAt', width: 20, style: { alignment: { horizontal: 'center' } } }
+                { header: 'Título do Jogo', key: 'title', width: 32 },
+                { header: 'Gênero', key: 'genre', width: 22 },
+                { header: 'Plataforma', key: 'platform', width: 22 },
+                { header: 'Média de Nota', key: 'averageRating', width: 16, style: { alignment: { horizontal: 'center' } } },
+                { header: 'Qtd. Avaliações', key: 'totalUsers', width: 16, style: { alignment: { horizontal: 'center' } } }
             ];
 
-            // Estilo da linha de cabeçalho (Linha 1)
+            // Cabeçalho estilizado
             const headerRow = worksheet.getRow(1);
             headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
             headerRow.fill = {
@@ -145,29 +157,27 @@ class GameController {
             headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
             headerRow.height = 24;
 
-            // Adiciona as linhas
+            // Adicionando os registros
             games.forEach((game) => {
+                const item = game.dataValues || game;
+
                 worksheet.addRow({
-                    id: game.id,
-                    title: game.title,
-                    genre: game.genre,
-                    platform: game.platform,
-                    status: game.status ? game.status.toUpperCase() : 'N/A',
-                    rating: game.rating !== null && game.rating !== undefined ? game.rating : 'N/A',
-                    userName: game.user ? game.user.name : 'Desconhecido',
-                    userEmail: game.user ? game.user.email : 'N/A',
-                    createdAt: new Date(game.createdAt).toLocaleDateString('pt-BR')
+                    title: item.title,
+                    genre: item.genre || 'N/A',
+                    platform: item.platform || 'N/A',
+                    averageRating: item.averageRating !== null && item.averageRating !== undefined ? item.averageRating : 'Sem avaliações',
+                    totalUsers: item.totalUsers
                 });
             });
 
-            // Configura os headers de download
+            // Configuração dos cabeçalhos HTTP para download
             res.setHeader(
                 'Content-Type',
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             );
             res.setHeader(
                 'Content-Disposition',
-                'attachment; filename="relatorio_games.xlsx"'
+                'attachment; filename="catalogo_comunitario_games.xlsx"'
             );
 
             await workbook.xlsx.write(res);

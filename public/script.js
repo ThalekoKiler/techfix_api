@@ -4,9 +4,13 @@ const API_URL = 'http://localhost:3000';
 const authForms = document.getElementById('auth-forms');
 const userInfo = document.getElementById('user-info');
 const loggedUserName = document.getElementById('logged-user-name');
-const btnLogout = document.getElementById('btn-logout');
 const gamesContainer = document.getElementById('games-container');
 const btnReload = document.getElementById('btn-reload');
+
+// Alternância de visualização: 'community' ou 'mygames'
+let currentView = 'community';
+const btnToggleView = document.getElementById('btn-toggle-view');
+const catalogTitle = document.getElementById('catalog-title');
 
 // Painel de Estatísticas
 const statsPanel = document.getElementById('stats-panel');
@@ -18,19 +22,31 @@ const statMedia = document.getElementById('stat-media');
 
 // Filtros
 const filterSearch = document.getElementById('filter-search');
-const filterStatus = document.getElementById('filter-status');
 const filterPlatform = document.getElementById('filter-platform');
 const btnFilter = document.getElementById('btn-filter');
 const btnClearFilter = document.getElementById('btn-clear-filter');
+
+// Elementos do Formulário de Jogos (Controle de UX)
+const gameStatusSelect = document.getElementById('game-status');
+const gameRatingInput = document.getElementById('game-rating');
 
 // 1. Inicialização
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
     fetchGames();
+
+    // Trava inicial caso comece em "desejado"
+    if (gameStatusSelect && gameRatingInput) {
+        if (gameStatusSelect.value === 'desejado') {
+            gameRatingInput.value = '';
+            gameRatingInput.disabled = true;
+            gameRatingInput.placeholder = 'Nota desabilitada (Desejado)';
+        }
+    }
 });
 
 // 2. Gerenciamento de Sessão com JWT
-function checkAuth() {
+async function checkAuth() {
     const token = localStorage.getItem('token');
     const user = JSON.parse(localStorage.getItem('user'));
 
@@ -40,6 +56,23 @@ function checkAuth() {
         loggedUserName.textContent = user.name || 'Usuário';
         statsPanel.classList.remove('hidden');
         fetchStats();
+
+        // Garante que o nome exibido seja o nome real e não o e-mail
+        if (!user.name || user.name.includes('@')) {
+            try {
+                const res = await fetch(`${API_URL}/usuario/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const userData = await res.json();
+                    user.name = userData.name;
+                    localStorage.setItem('user', JSON.stringify(user));
+                    loggedUserName.textContent = userData.name;
+                }
+            } catch (err) {
+                console.error('Erro ao verificar dados do usuário:', err);
+            }
+        }
     } else {
         authForms.classList.remove('hidden');
         userInfo.classList.add('hidden');
@@ -47,14 +80,24 @@ function checkAuth() {
     }
 }
 
-btnLogout.addEventListener('click', () => {
+// 3. Função Global de Logout (Chamada direta pelo onclick)
+function logoutUser() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    checkAuth();
-    alert('Você saiu da sua conta.');
-});
 
-// 3. Login
+    currentView = 'community';
+    if (catalogTitle) catalogTitle.textContent = 'Catálogo Comunitário';
+    if (btnToggleView) btnToggleView.textContent = '📁 Ver Meus Jogos';
+
+    authForms.classList.remove('hidden');
+    userInfo.classList.add('hidden');
+    statsPanel.classList.add('hidden');
+
+    fetchGames();
+    alert('Sessão encerrada com sucesso!');
+}
+
+// 4. Login
 document.getElementById('form-login').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('login-email').value;
@@ -74,8 +117,9 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
         }
 
         localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify({ id: data.userId, name: data.name || email }));
-        checkAuth();
+        localStorage.setItem('user', JSON.stringify({ id: data.userId, name: data.name }));
+
+        await checkAuth();
         fetchGames();
         alert('Logado com sucesso!');
     } catch (err) {
@@ -83,7 +127,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
     }
 });
 
-// 4. Cadastro de Usuário
+// 5. Cadastro de Usuário
 document.getElementById('form-register').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('reg-name').value;
@@ -109,7 +153,8 @@ document.getElementById('form-register').addEventListener('submit', async (e) =>
 
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify({ id: data.userId, name }));
-        checkAuth();
+
+        await checkAuth();
         fetchGames();
         alert('Conta criada com sucesso!');
     } catch (err) {
@@ -117,7 +162,25 @@ document.getElementById('form-register').addEventListener('submit', async (e) =>
     }
 });
 
-// 5. Estatísticas do Usuário (GET /usuario/estatisticas)
+// 6. Alternar entre Catálogo Comunitário e Meus Jogos
+btnToggleView.addEventListener('click', () => {
+    const token = localStorage.getItem('token');
+    if (currentView === 'community') {
+        if (!token) {
+            return alert('Faça login primeiro para gerenciar seus próprios jogos!');
+        }
+        currentView = 'mygames';
+        catalogTitle.textContent = 'Meus Jogos Cadastrados';
+        btnToggleView.textContent = '🌐 Ver Catálogo Comunitário';
+    } else {
+        currentView = 'community';
+        catalogTitle.textContent = 'Catálogo Comunitário';
+        btnToggleView.textContent = '📁 Ver Meus Jogos';
+    }
+    fetchGames();
+});
+
+// 7. Estatísticas do Usuário (GET /usuario/estatisticas)
 async function fetchStats() {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -136,17 +199,73 @@ async function fetchStats() {
         statDesejados.textContent = stats.desejados ?? 0;
         statMedia.textContent = stats.mediaNotas !== undefined ? Number(stats.mediaNotas).toFixed(1) : '0.0';
     } catch (err) {
-        console.error('Falha ao buscar estatísticas:', err);
+        console.error('Falha ao obter estatísticas:', err);
     }
 }
 
-// 6. Listagem de Jogos com Filtros (GET /games?search=&status=&platform=)
+// 8. Badge Colorida para Notas
+function getRatingBadge(rating) {
+    if (rating === null || rating === undefined || rating === 'N/A') {
+        return `<span style="background: #475569; padding: 2px 8px; border-radius: 4px; font-weight: bold; color: #fff;">N/A</span>`;
+    }
+    const num = parseFloat(rating);
+    let color = '#22c55e'; // Verde
+    if (num < 6) color = '#ef4444'; // Vermelho
+    else if (num < 8) color = '#eab308'; // Amarelo
+
+    return `<span style="background: ${color}; color: #0f172a; padding: 2px 8px; border-radius: 4px; font-weight: bold;">⭐ ${num.toFixed(1)}</span>`;
+}
+
+// 9. Listagem de Jogos
 async function fetchGames() {
     gamesContainer.innerHTML = '<p class="placeholder-text">Atualizando lista...</p>';
+    const token = localStorage.getItem('token');
 
+    // MODO 1: Meus Jogos Cadastrados
+    if (currentView === 'mygames') {
+        try {
+            const res = await fetch(`${API_URL}/games/user/mygames`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const games = await res.json();
+
+            if (!res.ok || !Array.isArray(games) || games.length === 0) {
+                return gamesContainer.innerHTML = '<p class="placeholder-text">Você ainda não cadastrou nenhum jogo.</p>';
+            }
+
+            gamesContainer.innerHTML = games.map(game => `
+        <div class="game-card">
+          ${game.image ? `<img src="${game.image}" alt="Capa de ${game.title}" class="game-cover">` : ''}
+          <div class="game-content">
+            <h4>${game.title}</h4>
+            <div class="game-info">
+              <p><strong>Gênero:</strong> ${game.genre}</p>
+              <p><strong>Plataforma:</strong> ${game.platform}</p>
+              <p><strong>Status:</strong> ${game.status}</p>
+              <p><strong>Sua Nota:</strong> ${getRatingBadge(game.rating)}</p>
+            </div>
+            
+            <a 
+              href="https://www.google.com/search?q=${encodeURIComponent(game.title + ' jogo')}" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              class="btn-secondary" 
+              style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; margin-top: 10px; margin-bottom: 8px; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; width: 100%; box-sizing: border-box; text-align: center;">
+              🔍 Mais Detalhes
+            </a>
+          </div>
+          <button class="btn-danger" onclick="deleteGame(${game.id})">Remover Jogo</button>
+        </div>
+      `).join('');
+        } catch (err) {
+            gamesContainer.innerHTML = '<p class="placeholder-text">Erro ao buscar seus jogos.</p>';
+        }
+        return;
+    }
+
+    // MODO 2: Catálogo Comunitário Unificado
     const params = new URLSearchParams();
     if (filterSearch.value.trim()) params.append('search', filterSearch.value.trim());
-    if (filterStatus.value) params.append('status', filterStatus.value);
     if (filterPlatform.value.trim()) params.append('platform', filterPlatform.value.trim());
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
@@ -155,15 +274,9 @@ async function fetchGames() {
         const res = await fetch(`${API_URL}/games${queryString}`);
         const games = await res.json();
 
-        if (!res.ok) {
-            return gamesContainer.innerHTML = '<p class="placeholder-text">Erro ao buscar jogos.</p>';
+        if (!res.ok || !Array.isArray(games) || games.length === 0) {
+            return gamesContainer.innerHTML = '<p class="placeholder-text">Nenhum jogo encontrado no catálogo.</p>';
         }
-
-        if (!Array.isArray(games) || games.length === 0) {
-            return gamesContainer.innerHTML = '<p class="placeholder-text">Nenhum jogo encontrado.</p>';
-        }
-
-        const currentUserId = JSON.parse(localStorage.getItem('user'))?.id;
 
         gamesContainer.innerHTML = games.map(game => `
       <div class="game-card">
@@ -173,18 +286,35 @@ async function fetchGames() {
           <div class="game-info">
             <p><strong>Gênero:</strong> ${game.genre}</p>
             <p><strong>Plataforma:</strong> ${game.platform}</p>
-            <p><strong>Status:</strong> ${game.status}</p>
-            <p><strong>Nota:</strong> ${game.rating !== null ? game.rating : 'N/A'}</p>
-            <p><strong>Cadastrado por:</strong> ${game.user ? game.user.name : 'Desconhecido'}</p>
+            <p><strong>Média Comunitária:</strong> ${getRatingBadge(game.averageRating)}</p>
+            <p><strong>👥 Avaliações:</strong> ${game.totalUsers} usuário(s)</p>
+          </div>
+          
+          <div style="display: flex; gap: 8px; margin-top: 10px; flex-direction: column;">
+            <!-- Botão de Detalhes no Google -->
+            <a 
+              href="https://www.google.com/search?q=${encodeURIComponent(game.title + ' jogo ' + (game.platform || ''))}" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              class="btn-secondary" 
+              style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; text-align: center;">
+              🔍 Mais Detalhes
+            </a>
+
+            <!-- Botão de Trailer no YouTube -->
+            <a 
+              href="https://www.youtube.com/results?search_query=${encodeURIComponent(game.title + ' official trailer')}" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              style="background-color: #dc2626; color: #ffffff; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; font-weight: 600; text-align: center;">
+              🎬 Ver Trailer
+            </a>
           </div>
         </div>
-        ${game.userId === currentUserId ? `
-          <button class="btn-danger" onclick="deleteGame(${game.id})">Remover</button>
-        ` : ''}
       </div>
     `).join('');
     } catch (err) {
-        gamesContainer.innerHTML = '<p class="placeholder-text">Falha ao carregar jogos da API.</p>';
+        gamesContainer.innerHTML = '<p class="placeholder-text">Falha ao carregar catálogo comunitário.</p>';
     }
 }
 
@@ -192,12 +322,11 @@ btnReload.addEventListener('click', fetchGames);
 btnFilter.addEventListener('click', fetchGames);
 btnClearFilter.addEventListener('click', () => {
     filterSearch.value = '';
-    filterStatus.value = '';
     filterPlatform.value = '';
     fetchGames();
 });
 
-// 7. Criar Jogo com Upload de Imagem (FormData via POST /games)
+// 10. Criar Jogo com Upload de Imagem (FormData via POST /games)
 document.getElementById('form-game').addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -214,7 +343,7 @@ document.getElementById('form-game').addEventListener('submit', async (e) => {
     const imageInput = document.getElementById('game-image');
 
     if (status === 'desejado' && rating) {
-        return alert('Você não pode avaliar um jogo com status "desejado"!');
+        return alert('Você não pode avaliar um jogo que está como desejado!');
     }
 
     const formData = new FormData();
@@ -248,20 +377,27 @@ document.getElementById('form-game').addEventListener('submit', async (e) => {
         }
 
         document.getElementById('form-game').reset();
+
+        // Restaura o estado inicial do campo de nota após resetar o form
+        if (gameStatusSelect.value === 'desejado') {
+            gameRatingInput.disabled = true;
+            gameRatingInput.placeholder = 'Nota desabilitada (Desejado)';
+        }
+
         fetchGames();
         fetchStats();
         alert('Jogo cadastrado com sucesso!');
     } catch (err) {
-        alert('Erro de conexão ao criar jogo.');
+        alert('Erro de conexão ao cadastrar o jogo.');
     }
 });
 
-// 8. Deletar Jogo (DELETE Protegido)
+// 11. Deletar Jogo (DELETE Protegido)
 async function deleteGame(id) {
     const token = localStorage.getItem('token');
     if (!token) return alert('Acesso não autorizado.');
 
-    if (!confirm('Tem certeza que deseja remover este jogo?')) return;
+    if (!confirm('Tem certeza de que deseja remover este jogo da sua lista?')) return;
 
     try {
         const res = await fetch(`${API_URL}/games/${id}`, {
@@ -272,13 +408,27 @@ async function deleteGame(id) {
         const data = await res.json();
 
         if (!res.ok) {
-            return alert(data.error || 'Erro ao deletar jogo.');
+            return alert(data.error || 'Erro ao remover jogo.');
         }
 
         fetchGames();
         fetchStats();
         alert('Jogo removido com sucesso!');
     } catch (err) {
-        alert('Erro de conexão ao deletar jogo.');
+        alert('Erro de conexão ao remover o jogo.');
     }
+}
+
+// 12. Controle de UX: bloqueia o campo de nota se o status mudar para "desejado"
+if (gameStatusSelect && gameRatingInput) {
+    gameStatusSelect.addEventListener('change', () => {
+        if (gameStatusSelect.value === 'desejado') {
+            gameRatingInput.value = '';
+            gameRatingInput.disabled = true;
+            gameRatingInput.placeholder = 'Nota desabilitada (Desejado)';
+        } else {
+            gameRatingInput.disabled = false;
+            gameRatingInput.placeholder = 'Nota (0 a 10)';
+        }
+    });
 }
